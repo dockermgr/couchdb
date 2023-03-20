@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-##@Version           :  202303191037-git
+##@Version           :  202303192116-git
 # @@Author           :  Jason Hempstead
 # @@Contact          :  jason@casjaysdev.com
-# @@License          :  WTFPL
+# @@License          :  LICENSE.md
 # @@ReadME           :  install.sh --help
 # @@Copyright        :  Copyright: (c) 2023 Jason Hempstead, Casjays Developments
-# @@Created          :  Sunday, Mar 19, 2023 10:37 EDT
+# @@Created          :  Sunday, Mar 19, 2023 21:16 EDT
 # @@File             :  install.sh
 # @@Description      :  Container installer script for couchdb
 # @@Changelog        :  New script
@@ -19,7 +19,7 @@
 # @@Template         :  installers/dockermgr
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 APPNAME="couchdb"
-VERSION="202303191037-git"
+VERSION="202303192116-git"
 HOME="${USER_HOME:-$HOME}"
 USER="${SUDO_USER:-$USER}"
 RUN_USER="${SUDO_USER:-$USER}"
@@ -78,8 +78,8 @@ trap_exit
 dockermgr_req_version "$APPVERSION"
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Custom required functions
-__sudo() { [ -n "$(type -P 'sudo')" ] && sudo -n true && sudo -HE "$@" || return 1; }
-__sudo_root() { [ -n "$(type -P 'sudo')" ] && sudo -n true && ask_for_password true && sudo "$@" || return 1; }
+__sudo() { [ -n "$(type -P 'sudo')" ] && sudo -n true && sudo -HE "$@" || eval "$*" || return 1; }
+__sudo_root() { [ -n "$(type -P 'sudo')" ] && sudo -n true && ask_for_password true && sudo "$@" || eval "$*" || return 1; }
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 __port() { echo "$((50000 + $RANDOM % 1000))" | grep '^' || return 1; }
 __route() { [ -n "$(type -P ip)" ] && eval ip route 2>/dev/null || return 1; }
@@ -264,7 +264,7 @@ HOST_DOCKER_LINK=""
 HOST_NETWORK_ADDR="all"
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Setup nginx proxy variables [yes/no] [yes/no] [http] [https] [yes/no]
-HOST_NGINX_ENABLED="no"
+HOST_NGINX_ENABLED="yes"
 HOST_NGINX_SSL_ENABLED="yes"
 HOST_NGINX_HTTP_PORT="80"
 HOST_NGINX_HTTPS_PORT="443"
@@ -294,8 +294,8 @@ CONTAINER_HTTP_PROTO="http"
 CONTAINER_DATABASE_LISTEN=""
 CONTAINER_REDIS_ENABLED=""
 CONTAINER_MARIADB_ENABLED=""
-CONTAINER_MONGODB_ENABLED=""
-CONTAINER_COUCHDB_ENABLED="yes"
+CONTAINER_MONGODB_ENABLED="yes"
+CONTAINER_COUCHDB_ENABLED=""
 CONTAINER_POSTGRES_ENABLED=""
 CONTAINER_SUPABASE_ENABLED=""
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -396,6 +396,14 @@ __dockermgr_variables() {
   [ -d "$DOCKERMGR_CONFIG_DIR/env" ] || mkdir -p "$DOCKERMGR_CONFIG_DIR/env"
   cat <<EOF | tee | tr '|' '\n'
 # Enviroment variables for $APPNAME
+ENV_CONTAINER_USER_NAME="${CONTAINER_USER_NAME:-}"
+ENV_CONTAINER_USER_PASS="${CONTAINER_USER_PASS:-}"
+ENV_CONTAINER_ENV_USER_NAME="${CONTAINER_ENV_USER_NAME:-}"
+ENV_CONTAINER_ENV_PASS_NAME="${CONTAINER_ENV_PASS_NAME:-}"
+ENV_CONTAINER_DATABASE_USER_ROOT="${CONTAINER_DATABASE_USER_ROOT:-}"
+ENV_CONTAINER_DATABASE_PASS_ROOT="${CONTAINER_DATABASE_PASS_ROOT:-}"
+ENV_CONTAINER_DATABASE_USER_NORMAL="${CONTAINER_DATABASE_USER_NORMAL:-}"
+ENV_CONTAINER_DATABASE_PASS_NORMAL="${CONTAINER_DATABASE_PASS_NORMAL:-}"
 
 EOF
 }
@@ -436,6 +444,7 @@ chmod -Rf 777 "$APPDIR"
 mkdir -p "$LOCAL_DATA_DIR"
 mkdir -p "$LOCAL_CONFIG_DIR"
 mkdir -p "$DOCKERMGR_CONFIG_DIR/env"
+mkdir -p "$DOCKERMGR_CONFIG_DIR/secure"
 mkdir -p "$DOCKERMGR_CONFIG_DIR/scripts"
 mkdir -p "$DOCKERMGR_CONFIG_DIR/containers"
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -449,6 +458,16 @@ CONTAINER_COMMANDS="${CONTAINER_COMMANDS//  / }"
 CONTAINER_CAPABILITIES="${CONTAINER_CAPABILITIES//  / }"
 DOCKER_CUSTOM_ARGUMENTS="${DOCKER_CUSTOM_ARGUMENTS//  / }"
 CONTAINER_ADD_CUSTOM_PORT="${CONTAINER_ADD_CUSTOM_PORT//  / }"
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# rewrite variables from env file
+CONTAINER_USER_NAME="${ENV_CONTAINER_USER_NAME:-CONTAINER_USER_NAME}"
+CONTAINER_USER_PASS="${ENV_CONTAINER_USER_PASS:-CONTAINER_USER_PASS}"
+CONTAINER_ENV_USER_NAME="${ENV_CONTAINER_ENV_USER_NAME:-CONTAINER_ENV_USER_NAME}"
+CONTAINER_ENV_PASS_NAME="${ENV_CONTAINER_ENV_PASS_NAME:-CONTAINER_ENV_PASS_NAME}"
+CONTAINER_DATABASE_USER_ROOT="${ENV_CONTAINER_DATABASE_USER_ROOT:-CONTAINER_DATABASE_USER_ROOT}"
+CONTAINER_DATABASE_PASS_ROOT="${ENV_CONTAINER_DATABASE_PASS_ROOT:-CONTAINER_DATABASE_PASS_ROOT}"
+CONTAINER_DATABASE_USER_NORMAL="${ENV_CONTAINER_DATABASE_USER_NORMAL:-CONTAINER_DATABASE_USER_NORMAL}"
+CONTAINER_DATABASE_PASS_NORMAL="${ENV_CONTAINER_DATABASE_PASS_NORMAL:-CONTAINER_DATABASE_PASS_NORMAL}"
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Setup arrays
 DOCKER_SET_PUBLISH=""
@@ -806,7 +825,9 @@ if [ -z "$DATABASE_BASE_DIR" ]; then
   DOCKER_SET_OPTIONS+="--env DATABASE_BASE_DIR=$DATABASE_BASE_DIR "
 fi
 if [ "$CONTAINER_REDIS_ENABLED" = "yes" ]; then
+  SHOW_DATABASE_INFO="true"
   CONTAINER_DATABASE_ENABLED="yes"
+  CONTAINER_DATABASE_PROTO="redis://$HOST_LISTEN_ADDR:6379"
   DOCKER_SET_TMP_PUBLISH+=("--publish $CONTAINER_DATABASE_LISTEN:6379:6379")
   DATABASE_DIR_REDIS="${DATABASE_DIR_REDIS:-$DATABASE_BASE_DIR/redis}"
   DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR/db/redis:/$DATABASE_DIR_REDIS:z "
@@ -815,7 +836,9 @@ if [ "$CONTAINER_REDIS_ENABLED" = "yes" ]; then
   MESSAGE_REDIS="redis is listening on $CONTAINER_DATABASE_LISTEN:6379 and data is in: $DATABASE_DIR_REDIS"
 fi
 if [ "$CONTAINER_POSTGRES_ENABLED" = "yes" ]; then
+  SHOW_DATABASE_INFO="true"
   CONTAINER_DATABASE_ENABLED="yes"
+  CONTAINER_DATABASE_PROTO="postgresql://$HOST_LISTEN_ADDR:5432"
   DOCKER_SET_TMP_PUBLISH+=(--publish "$CONTAINER_DATABASE_LISTEN:5432:5432")
   DATABASE_DIR_PGSQL="${DATABASE_DIR_PGSQL:-$DATABASE_BASE_DIR/pgsql}"
   DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR/db/pgsql:/$DATABASE_DIR_PGSQL:z "
@@ -824,7 +847,9 @@ if [ "$CONTAINER_POSTGRES_ENABLED" = "yes" ]; then
   MESSAGE_PGSQL="postgres is listening on $CONTAINER_DATABASE_LISTEN:5432 and data is in: $DATABASE_DIR_PGSQL"
 fi
 if [ "$CONTAINER_MARIADB_ENABLED" = "yes" ]; then
+  SHOW_DATABASE_INFO="true"
   CONTAINER_DATABASE_ENABLED="yes"
+  CONTAINER_DATABASE_PROTO="mysql://$HOST_LISTEN_ADDR:3306"
   DOCKER_SET_TMP_PUBLISH+=(--publish "$CONTAINER_DATABASE_LISTEN:3306:3306")
   DATABASE_DIR_MARIADB="${DATABASE_DIR_MARIADB:-$DATABASE_BASE_DIR/mysql}"
   DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR/db/mysql:/$DATABASE_DIR_MARIADB:z "
@@ -833,7 +858,9 @@ if [ "$CONTAINER_MARIADB_ENABLED" = "yes" ]; then
   MESSAGE_MARIADB="mariadb is listening on $CONTAINER_DATABASE_LISTEN:3306 and data is in: $DATABASE_DIR_MARIADB"
 fi
 if [ "$CONTAINER_COUCHDB_ENABLED" = "yes" ]; then
+  SHOW_DATABASE_INFO="true"
   CONTAINER_DATABASE_ENABLED="yes"
+  CONTAINER_DATABASE_PROTO="http://$HOST_LISTEN_ADDR:5984"
   DOCKER_SET_TMP_PUBLISH+=(--publish "$CONTAINER_DATABASE_LISTEN:5984:5984")
   DATABASE_DIR_COUCHDB="${DATABASE_DIR_COUCHDB:-$DATABASE_BASE_DIR/couchdb}"
   DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR/db/couchdb:/$DATABASE_DIR_COUCHDB:z "
@@ -842,7 +869,9 @@ if [ "$CONTAINER_COUCHDB_ENABLED" = "yes" ]; then
   MESSAGE_COUCHDB="couchdb is listening on $CONTAINER_DATABASE_LISTEN:5984 and data is in: $DATABASE_DIR_COUCHDB"
 fi
 if [ "$CONTAINER_MONGODB_ENABLED" = "yes" ]; then
+  SHOW_DATABASE_INFO="true"
   CONTAINER_DATABASE_ENABLED="yes"
+  CONTAINER_DATABASE_PROTO="mongodb://$HOST_LISTEN_ADDR:27017"
   DOCKER_SET_TMP_PUBLISH+=(--publish "$CONTAINER_DATABASE_LISTEN:27017:27017")
   DATABASE_DIR_MONGODB="${DATABASE_DIR_MONGODB:-$DATABASE_BASE_DIR/mongodb}"
   DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR/db/mongodb:/$DATABASE_DIR_MONGODB:z "
@@ -851,7 +880,9 @@ if [ "$CONTAINER_MONGODB_ENABLED" = "yes" ]; then
   MESSAGE_MONGODB="mongodb is listening on $CONTAINER_DATABASE_LISTEN:27017 and data is in: $DATABASE_DIR_MONGODB"
 fi
 if [ "$CONTAINER_SUPABASE_ENABLED" = "yes" ]; then
+  SHOW_DATABASE_INFO="true"
   CONTAINER_DATABASE_ENABLED="yes"
+  CONTAINER_DATABASE_PROTO="http://$HOST_LISTEN_ADDR:8000"
   DOCKER_SET_TMP_PUBLISH+=(--publish "$CONTAINER_DATABASE_LISTEN:5432:5432")
   DATABASE_DIR_SUPABASE="${DATABASE_DIR_SUPABASE:-$DATABASE_BASE_DIR/supabase}"
   DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR/db/supabase:/$DATABASE_DIR_SUPABASE:z "
@@ -939,7 +970,7 @@ if [ "$CONTAINER_MOUNT_DATA_ENABLED" = "yes" ]; then
     CONTAINER_MOUNT_DATA_MOUNT_DIR="/data"
   fi
   CONTAINER_MOUNT_DATA_MOUNT_DIR="${CONTAINER_MOUNT_DATA_MOUNT_DIR//:*/}"
-  DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR:/$CONTAINER_MOUNT_DATA_MOUNT_DIR:z "
+  DOCKER_SET_OPTIONS+="--volume $LOCAL_DATA_DIR:$CONTAINER_MOUNT_DATA_MOUNT_DIR:z "
 fi
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Set config mount point
@@ -948,7 +979,7 @@ if [ "$CONTAINER_MOUNT_CONFIG_ENABLED" = "yes" ]; then
     CONTAINER_MOUNT_CONFIG_MOUNT_DIR="/config"
   fi
   CONTAINER_MOUNT_CONFIG_MOUNT_DIR="${CONTAINER_MOUNT_CONFIG_MOUNT_DIR//:*/}"
-  DOCKER_SET_OPTIONS+="--volume $LOCAL_CONFIG_DIR:/$CONTAINER_MOUNT_CONFIG_MOUNT_DIR:z "
+  DOCKER_SET_OPTIONS+="--volume $LOCAL_CONFIG_DIR:$CONTAINER_MOUNT_CONFIG_MOUNT_DIR:z "
 fi
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # additional docker arguments
@@ -1350,7 +1381,6 @@ if [ "$CONTAINER_INSTALLED" = "true" ] || __docker_ps; then
     printf_cyan "nginx proxy to port:             $NGINX_PROXY_URL"
     printf_cyan "nginx config file installed to:  $NGINX_CONF_FILE"
   fi
-  printf '# - - - - - - - - - - - - - - - - - - - - - - - - - -\n'
   if [ -n "$SET_PORT" ] && [ -n "$NGINX_PROXY_URL" ]; then
     MESSAGE="true"
     printf_blue "Server address:                 $NGINX_PROXY_URL"
@@ -1362,46 +1392,45 @@ if [ "$CONTAINER_INSTALLED" = "true" ] || __docker_ps; then
   if [ -n "$CONTAINER_USER_PASS" ]; then
     MESSAGE="true"
     printf_blue "Password is:                    $CONTAINER_USER_PASS"
+    if [ "$CONTAINER_DATABASE_USER_ROOT" ]; then
+      MESSAGE="true"
+      printf_blue "Database root user:            $CONTAINER_DATABASE_USER_ROOT"
+    fi
+    if [ "$CONTAINER_DATABASE_PASS_ROOT" ]; then
+      MESSAGE="true"
+      printf_blue "Database root password:        $CONTAINER_DATABASE_PASS_ROOT"
+    fi
+    if [ "$CONTAINER_DATABASE_USER_NORMAL" ]; then
+      MESSAGE="true"
+      printf_blue "Database user:                 $CONTAINER_DATABASE_USER_NORMAL"
+    fi
+    if [ "$CONTAINER_DATABASE_PASS_NORMAL" ]; then
+      MESSAGE="true"
+      printf_blue "Database password:             $CONTAINER_DATABASE_PASS_NORMAL"
+    fi
   fi
-  if [ -n "$MESSAGE_COUCHDB" ]; then
+  if [ "$SHOW_DATABASE_INFO" = "true" ]; then
     MESSAGE="true"
-    printf_cyan "$MESSAGE_COUCHDB"
-  fi
-  if [ -n "$MESSAGE_MARIADB" ]; then
-    MESSAGE="true"
-    printf_cyan "$MESSAGE_MARIADB"
-  fi
-  if [ -n "$MESSAGE_MONGODB" ]; then
-    MESSAGE="true"
-    printf_cyan "$MESSAGE_MONGODB"
-  fi
-  if [ -n "$MESSAGE_PGSQL" ]; then
-    MESSAGE="true"
-    printf_cyan "$MESSAGE_PGSQL"
-  fi
-  if [ -n "$MESSAGE_REDIS" ]; then
-    MESSAGE="true"
-    printf_cyan "$MESSAGE_REDIS"
-  fi
-  if [ -n "$MESSAGE_SUPABASE" ]; then
-    MESSAGE="true"
-    printf_cyan "$MESSAGE_SUPABASE"
-  fi
-  if [ "$CONTAINER_DATABASE_USER_ROOT" ]; then
-    MESSAGE="true"
-    printf_blue "Database root user:             $CONTAINER_DATABASE_USER_ROOT"
-  fi
-  if [ "$CONTAINER_DATABASE_PASS_ROOT" ]; then
-    MESSAGE="true"
-    printf_blue "Database root password:         $CONTAINER_DATABASE_PASS_ROOT"
-  fi
-  if [ "$CONTAINER_DATABASE_USER_NORMAL" ]; then
-    MESSAGE="true"
-    printf_blue "Database user:                 $CONTAINER_DATABASE_USER_NORMAL"
-  fi
-  if [ "$CONTAINER_DATABASE_PASS_NORMAL" ]; then
-    MESSAGE="true"
-    printf_blue "Database password:             $CONTAINER_DATABASE_PASS_NORMAL"
+    printf_yellow "Database is running on         $CONTAINER_DATABASE_PROTO"
+    if [ -n "$MESSAGE_COUCHDB" ]; then
+      printf_cyan "$MESSAGE_COUCHDB"
+    fi
+    if [ -n "$MESSAGE_MARIADB" ]; then
+      printf_cyan "$MESSAGE_MARIADB"
+    fi
+    if [ -n "$MESSAGE_MONGODB" ]; then
+      printf_cyan "$MESSAGE_MONGODB"
+    fi
+    if [ -n "$MESSAGE_PGSQL" ]; then
+      printf_cyan "$MESSAGE_PGSQL"
+    fi
+    if [ -n "$MESSAGE_REDIS" ]; then
+      printf_cyan "$MESSAGE_REDIS"
+    fi
+    if [ -n "$MESSAGE_SUPABASE" ]; then
+      printf_cyan "$MESSAGE_SUPABASE"
+    fi
+    printf '# - - - - - - - - - - - - - - - - - - - - - - - - - -\n'
   fi
   if [ -f "$DATADIR/config/auth/htpasswd" ]; then
     MESSAGE="true"
